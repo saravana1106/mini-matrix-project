@@ -1,29 +1,74 @@
-name: Java CI Matrix Build
+name: Java Maven Matrix Build
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        java: [8, 11, 17]
+  build-and-test:
+    # The runner OS will be dynamically set by the matrix
     runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        # Define a list of Operating Systems to run on
+        os: [ubuntu-latest, windows-latest]
+        
+        # Define a list of Java Development Kit (JDK) versions to test
+        java-version: [8, 11, 17] # Common LTS versions
+        
+        # Optional: You can also include Maven versions if you need to test compatibility
+        # maven-version: [3.8.8, 3.9.6]
+
+      # Optional: Control behavior for failing jobs in the matrix
+      # Default: true. Cancels all in-progress/queued jobs if one matrix job fails.
+      # Set to false to allow all jobs to complete regardless of individual failures.
+      fail-fast: true 
+      
+      # Optional: Limits the number of parallel jobs that can run from the matrix.
+      # Useful for controlling resource usage on your runners.
+      max-parallel: 6 
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up JDK ${{ matrix.java }}
+      - name: Set up JDK ${{ matrix.java-version }}
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: ${{ matrix.java }}
+          java-version: ${{ matrix.java-version }}
+          distribution: 'temurin' # Recommended: 'temurin' (Adoptium OpenJDK), 'adopt', 'zulu', 'microsoft', etc.
+          # Optional: Specify Maven version if you added it to your matrix
+          # maven-version: ${{ matrix.maven-version }}
+          cache: maven # Enable caching for Maven dependencies to speed up builds
 
       - name: Build with Maven
-        run: mvn -B clean install
+        run: mvn -B package --file pom.xml # -B for batch mode (non-interactive)
+        # If you have specific Maven profiles (e.g., from 'include' matrix option):
+        # run: mvn -B package --file pom.xml -P ${{ matrix.test-profile || '' }}
+
+      - name: Run tests (often included in 'mvn package')
+        # If your 'mvn package' does not run tests, or you have separate test phases:
+        # run: mvn -B test --file pom.xml
+        # If you're using a specific test profile from the matrix:
+        # if: ${{ matrix.test-profile }}
+        # run: mvn -B test --file pom.xml -P ${{ matrix.test-profile }}
+
+      - name: Upload JaCoCo Coverage Report (Optional)
+        if: success() # Only upload if the build/test was successful
+        # Adjust path to your JaCoCo report as per your project's pom.xml configuration
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ matrix.os }}-java${{ matrix.java-version }}
+          path: target/site/jacoco/jacoco.xml
+
+      - name: Upload JAR/WAR artifact (Optional)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-app-${{ matrix.os }}-java${{ matrix.java-version }}
+          path: target/*.jar # Adjust to your actual artifact path, e.g., target/*.jar or target/*.war
